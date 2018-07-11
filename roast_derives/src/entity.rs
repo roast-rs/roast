@@ -1,6 +1,5 @@
 use itertools::Itertools;
-use proc_macro::TokenStream;
-use proc_macro2::Span;
+use proc_macro2::{Span, TokenStream};
 use syn::{parse_str, Expr, Ident};
 
 #[derive(Debug, Fail)]
@@ -107,7 +106,12 @@ impl DerivedEntity {
                 }
             }
 
-            let retval = parse_str::<Expr>(&rust_to_jni_return_type(&func).unwrap()).unwrap();
+            let ret_ty = rust_to_jni_return_type(&func).unwrap();
+            let retval = if ret_ty.is_empty() {
+                parse_str::<Expr>("()").unwrap()
+            } else {
+                parse_str::<Expr>(&ret_ty).unwrap()
+            };
             let expanded = quote!{
                 #[no_mangle]
                 pub extern "system" fn #full_fn_name(#(#args),*) -> #retval {
@@ -116,7 +120,7 @@ impl DerivedEntity {
             };
             stream.extend(expanded.into_iter());
         }
-        stream.into()
+        stream
     }
 
     /// Converts an arg tuple of name and type into a expression tree that
@@ -285,6 +289,14 @@ mod tests {
     }
 
     #[test]
+    fn ffi_convert_no_methods() {
+        let derived = DerivedEntity::new("Entity", vec![]);
+        let tokens = derived.export_jni_ffi_tokens();
+        let exported = format!("{}", tokens);
+        assert!(exported.is_empty());
+    }
+
+    #[test]
     fn java_convert_static_no_arg_no_ret() {
         let mut fns = vec![];
         fns.push(DerivedFn::new("foobar", None, vec![]));
@@ -301,6 +313,19 @@ mod tests {
 }
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_static_no_arg_no_ret() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("foobar", None, vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn \
+             Java_Entity_foobar ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
+             ( ) { Entity :: foobar ( ) }";
+        assert_eq!(expected, exported);
     }
 
     #[test]
@@ -327,6 +352,22 @@ mod tests {
     }
 
     #[test]
+    fn ffi_convert_no_arg_no_ret() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "foobar",
+            None,
+            vec![DerivedFnArg::SelfBorrow { mutable: false }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected = "# [ no_mangle ] pub extern \"system\" fn \
+                        Java_Entity_foobar ( _env : roast :: JNIEnv , _obj : roast :: JObject ) -> \
+                        ( ) { Entity :: foobar ( ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
     fn java_convert_static_no_arg_ret() {
         let mut fns = vec![];
         fns.push(DerivedFn::new("foobar", Some("i32".into()), vec![]));
@@ -343,6 +384,19 @@ mod tests {
 }
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_static_no_arg_ret() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("foobar", Some("i32".into()), vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn \
+             Java_Entity_foobar ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
+             roast :: jint { Entity :: foobar ( ) }";
+        assert_eq!(expected, exported);
     }
 
     #[test]
@@ -369,6 +423,26 @@ mod tests {
 }
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_static_arg_no_ret() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "foobar",
+            None,
+            vec![DerivedFnArg::Captured {
+                name: "a".into(),
+                ty: "i64".into(),
+            }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+             ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) -> \
+             ( ) { Entity :: foobar ( a ) }";
+        assert_eq!(expected, exported);
     }
 
     #[test]
@@ -401,6 +475,31 @@ mod tests {
 }
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_static_arg_and_ret() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "foobar",
+            Some("bool".into()),
+            vec![
+                DerivedFnArg::Captured {
+                    name: "a".into(),
+                    ty: "i32".into(),
+                },
+                DerivedFnArg::Captured {
+                    name: "b".into(),
+                    ty: "i16".into(),
+                },
+            ],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
+                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foobar ( a , b ) }";
+        assert_eq!(expected, exported);
     }
 
     #[test]
@@ -440,6 +539,36 @@ mod tests {
     }
 
     #[test]
+    fn ffi_convert_static_two_methods() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "foo",
+            Some("bool".into()),
+            vec![
+                DerivedFnArg::Captured {
+                    name: "a".into(),
+                    ty: "i32".into(),
+                },
+                DerivedFnArg::Captured {
+                    name: "b".into(),
+                    ty: "i16".into(),
+                },
+            ],
+        ));
+        fns.push(DerivedFn::new("bar", Some("i32".into()), vec![]));
+
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
+                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
+                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foo ( a , b ) } \
+                        # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
+                        ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jint \
+                        { Entity :: bar ( ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
     fn java_convert_mixed_static_nonstatic_two_methods() {
         let mut fns = vec![];
         fns.push(DerivedFn::new(
@@ -474,5 +603,36 @@ mod tests {
 }
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_mixed_static_nonstatic_two_methods() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "foo",
+            Some("bool".into()),
+            vec![
+                DerivedFnArg::Captured {
+                    name: "a".into(),
+                    ty: "i32".into(),
+                },
+                DerivedFnArg::Captured {
+                    name: "b".into(),
+                    ty: "i16".into(),
+                },
+                DerivedFnArg::SelfOwned { mutable: true },
+            ],
+        ));
+        fns.push(DerivedFn::new("bar", Some("i32".into()), vec![]));
+
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
+                        ( _env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , \
+                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foo ( a , b ) } \
+                        # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar ( \
+                        _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
+                        roast :: jint { Entity :: bar ( ) }";
+        assert_eq!(expected, exported);
     }
 }

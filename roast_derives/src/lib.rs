@@ -33,7 +33,7 @@ pub fn roast_export(input: TokenStream) -> TokenStream {
     let token_stream = entity.export_jni_ffi_tokens();
     write_java_class(&entity);
     //panic!("{}", token_stream);
-    token_stream
+    token_stream.into()
 }
 
 /// Extracts a list of methods for a given identifier.
