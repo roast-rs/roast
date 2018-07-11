@@ -1,0 +1,5 @@
+extern crate roast;
+
+fn main() {
+    roast::build::build();
+}

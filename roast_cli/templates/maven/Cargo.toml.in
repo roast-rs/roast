@@ -1,0 +1,14 @@
+[package]
+name = $NAME$
+version = "0.1.0"
+authors = $AUTHORS$
+build = "build.rs"
+
+[dependencies]
+roast = { git = "https://github.com/roast-rs/roast.git" }
+
+[build-dependencies]
+roast = {git = "https://github.com/roast-rs/roast.git" }
+
+[lib]
+crate_type = ["cdylib"]

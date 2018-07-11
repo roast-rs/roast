@@ -1,0 +1,24 @@
+[package]
+name = "roast_cli"
+version = "0.1.0"
+authors = ["Michael Nitschinger <michael@nitschinger.at>"]
+description = "Artisan roasted Java for your coding pleasure"
+
+build = "build.rs"
+include = ["templates"]
+
+[[bin]]
+name = "roast"
+path = "src/main.rs"
+
+[dependencies]
+clap = "2.31"
+roast = { version = "0.1", path = "../roast" }
+loggerv = "0.7"
+log = "0.4"
+git2 = "0.7"
+phf = "0.7"
+includedir = "0.4"
+
+[build-dependencies]
+includedir_codegen = "0.4"

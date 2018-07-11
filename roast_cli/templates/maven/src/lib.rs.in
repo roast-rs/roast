@@ -1,0 +1,13 @@
+#[macro_use]
+extern crate roast;
+
+#[derive(Debug, RoastExport)]
+struct HellWorld {}
+
+impl HellWorld {
+
+    pub fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+}
