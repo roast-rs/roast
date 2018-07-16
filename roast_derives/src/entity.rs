@@ -1,3 +1,4 @@
+use inflector::Inflector;
 use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
 use syn::{parse_str, Expr, Ident};
@@ -53,6 +54,11 @@ impl DerivedFn {
         }
         return true;
     }
+
+    /// Returns the rust style function name turned into java style.
+    pub fn java_name(&self) -> String {
+        self.name.to_camel_case()
+    }
 }
 
 /// Describes the entity which is derived with methods and all.
@@ -83,8 +89,8 @@ impl DerivedEntity {
         for func in &self.fns {
             let struct_name = Ident::new(&self.name, Span::call_site());
             let fn_name = Ident::new(&func.name, Span::call_site());
-            let full_fn_name = Ident::new(
-                &format!("Java_{}_{}", struct_name, fn_name),
+            let jni_name = Ident::new(
+                &format!("Java_{}_{}", struct_name, &func.java_name()),
                 Span::call_site(),
             );
 
@@ -119,7 +125,7 @@ impl DerivedEntity {
                 // no return argument, skip the ret conversion
                 quote!{
                     #[no_mangle]
-                    pub extern "system" fn #full_fn_name(#(#args),*) {
+                    pub extern "system" fn #jni_name(#(#args),*) {
                        #struct_name::#fn_name(#(#inner_args),*)
                     }
                 }
@@ -133,7 +139,7 @@ impl DerivedEntity {
                 // we got a return value, so add a conversion wrapper
                 quote!{
                     #[no_mangle]
-                    pub extern "system" fn #full_fn_name(#(#args),*) -> #retval {
+                    pub extern "system" fn #jni_name(#(#args),*) -> #retval {
                        #convert_ret_fn_name(&env, #struct_name::#fn_name(#(#inner_args),*))
                     }
                 }
@@ -171,7 +177,7 @@ impl DerivedEntity {
                 "\n\tpublic{} native {} {}({});\n",
                 static_qualifier,
                 return_type,
-                func.name,
+                func.java_name(),
                 args.iter().join(", ")
             );
             converted_methods.push_str(&result);
@@ -297,6 +303,18 @@ mod tests {
         assert_eq!(Some("roast::jdouble"), rust_to_jni_type("f64"));
         assert_eq!(Some("roast::jboolean"), rust_to_jni_type("bool"));
         assert_eq!(Some("roast::jstring"), rust_to_jni_type("String"));
+    }
+
+    #[test]
+    fn func_name_to_java_style() {
+        assert_eq!(
+            String::from("func"),
+            DerivedFn::new("func", None, vec![]).java_name()
+        );
+        assert_eq!(
+            String::from("myFuncName"),
+            DerivedFn::new("my_func_name", None, vec![]).java_name()
+        );
     }
 
     #[test]
@@ -635,7 +653,7 @@ mod tests {
     fn ffi_convert_mixed_static_nonstatic_two_methods() {
         let mut fns = vec![];
         fns.push(DerivedFn::new(
-            "foo",
+            "get_foo_bar",
             Some("bool".into()),
             vec![
                 DerivedFnArg::Captured {
@@ -653,10 +671,10 @@ mod tests {
 
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_getFooBar \
         ( env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , \
         b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
-        ( & env , Entity :: foo ( a , b ) ) } # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
+        ( & env , Entity :: get_foo_bar ( a , b ) ) } # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
         ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jint \
         { roast :: convert :: convert_retval_i32 ( & env , Entity :: bar ( ) ) }";
         assert_eq!(expected, exported);
@@ -693,4 +711,5 @@ mod tests {
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
     }
+
 }
