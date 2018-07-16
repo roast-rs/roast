@@ -83,7 +83,13 @@ fn run_build(_m: &ArgMatches) {
     info!("Building the rust project via `cargo build`");
 
     match Command::new("cargo").arg("build").arg("-vv").output() {
-        Ok(o) => debug!("`cargo build -vv` result {}", convert_output(&o)),
+        Ok(ref o) if o.status.success() => {
+            debug!("`cargo build -vv` result {}", convert_output(&o))
+        }
+        Ok(e) => {
+            error!("`cargo build -vv` failed! {}", convert_output(&e));
+            exit(1);
+        }
         Err(e) => {
             error!("`cargo build -vv` failed! {}", e);
             exit(1);

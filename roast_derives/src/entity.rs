@@ -88,10 +88,18 @@ impl DerivedEntity {
                 Span::call_site(),
             );
 
+            let raw_ret_type =
+                rust_to_jni_return_type(&func).expect("Could not convert JNI return type");
+
             let mut args = vec![];
             let mut inner_args = vec![];
             // add JNI env
-            args.push(self.raw_arg_to_expr("_env", "roast::JNIEnv"));
+            if raw_ret_type.is_some() {
+                // for now we only need the env if we parse return values
+                args.push(self.raw_arg_to_expr("env", "roast::JNIEnv"));
+            } else {
+                args.push(self.raw_arg_to_expr("_env", "roast::JNIEnv"));
+            }
             // add JCLass (static method?)
             if func.is_static() {
                 args.push(self.raw_arg_to_expr("_class", "roast::JClass"));
@@ -106,16 +114,28 @@ impl DerivedEntity {
                 }
             }
 
-            let ret_ty = rust_to_jni_return_type(&func).unwrap();
-            let retval = if ret_ty.is_empty() {
-                parse_str::<Expr>("()").unwrap()
+            // todo: switch some
+            let expanded = if raw_ret_type.is_none() {
+                // no return argument, skip the ret conversion
+                quote!{
+                    #[no_mangle]
+                    pub extern "system" fn #full_fn_name(#(#args),*) {
+                       #struct_name::#fn_name(#(#inner_args),*)
+                    }
+                }
             } else {
-                parse_str::<Expr>(&ret_ty).unwrap()
-            };
-            let expanded = quote!{
-                #[no_mangle]
-                pub extern "system" fn #full_fn_name(#(#args),*) -> #retval {
-                    #struct_name::#fn_name(#(#inner_args),*)
+                let retval = parse_str::<Expr>(&raw_ret_type.unwrap()).unwrap();
+                let convert_fn = format!(
+                    "roast::convert::convert_retval_{}",
+                    func.return_type.as_ref().unwrap().to_lowercase()
+                );
+                let convert_ret_fn_name = parse_str::<Expr>(&convert_fn).unwrap();
+                // we got a return value, so add a conversion wrapper
+                quote!{
+                    #[no_mangle]
+                    pub extern "system" fn #full_fn_name(#(#args),*) -> #retval {
+                       #convert_ret_fn_name(&env, #struct_name::#fn_name(#(#inner_args),*))
+                    }
                 }
             };
             stream.extend(expanded.into_iter());
@@ -183,20 +203,21 @@ fn rust_to_java_return_type(func: &DerivedFn) -> Result<String, ConversionError>
     })
 }
 
-fn rust_to_jni_return_type(func: &DerivedFn) -> Result<String, ConversionError> {
+fn rust_to_jni_return_type(func: &DerivedFn) -> Result<Option<String>, ConversionError> {
     let ret = &func.return_type;
 
     Ok(match ret {
-        None => "".into(),
+        None => None,
         Some(t) => match rust_to_jni_type(&t) {
-            Some(v) => v,
+            Some(v) if v == "roast::JString" => Some(v.to_lowercase()),
+            Some(v) => Some(v.into()),
             None => {
                 return Err(ConversionError::UnsupportedReturnType {
                     rt: t.clone(),
                     func: func.name.clone(),
                 })
             }
-        }.into(),
+        },
     })
 }
 
@@ -220,6 +241,7 @@ fn rust_to_java_type(ty: &str) -> Option<&'static str> {
         "f32" => "float",
         "f64" => "double",
         "bool" => "boolean",
+        "String" => "String",
         _ => return None,
     })
 }
@@ -237,6 +259,7 @@ fn rust_to_jni_type(ty: &str) -> Option<&'static str> {
         "f32" => "roast::jfloat",
         "f64" => "roast::jdouble",
         "bool" => "roast::jboolean",
+        "String" => "roast::jstring",
         _ => return None,
     })
 }
@@ -258,6 +281,7 @@ mod tests {
         assert_eq!(Some("float"), rust_to_java_type("f32"));
         assert_eq!(Some("double"), rust_to_java_type("f64"));
         assert_eq!(Some("boolean"), rust_to_java_type("bool"));
+        assert_eq!(Some("String"), rust_to_java_type("String"));
     }
 
     #[test]
@@ -272,6 +296,7 @@ mod tests {
         assert_eq!(Some("roast::jfloat"), rust_to_jni_type("f32"));
         assert_eq!(Some("roast::jdouble"), rust_to_jni_type("f64"));
         assert_eq!(Some("roast::jboolean"), rust_to_jni_type("bool"));
+        assert_eq!(Some("roast::jstring"), rust_to_jni_type("String"));
     }
 
     #[test]
@@ -321,10 +346,9 @@ mod tests {
         fns.push(DerivedFn::new("foobar", None, vec![]));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn \
-             Java_Entity_foobar ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
-             ( ) { Entity :: foobar ( ) }";
+        let expected = "# [ no_mangle ] pub extern \"system\" fn \
+                        Java_Entity_foobar ( _env : roast :: JNIEnv , _class : roast :: JClass ) \
+                        { Entity :: foobar ( ) }";
         assert_eq!(expected, exported);
     }
 
@@ -362,8 +386,8 @@ mod tests {
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected = "# [ no_mangle ] pub extern \"system\" fn \
-                        Java_Entity_foobar ( _env : roast :: JNIEnv , _obj : roast :: JObject ) -> \
-                        ( ) { Entity :: foobar ( ) }";
+                        Java_Entity_foobar ( _env : roast :: JNIEnv , _obj : roast :: JObject ) \
+                        { Entity :: foobar ( ) }";
         assert_eq!(expected, exported);
     }
 
@@ -394,8 +418,8 @@ mod tests {
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected =
             "# [ no_mangle ] pub extern \"system\" fn \
-             Java_Entity_foobar ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
-             roast :: jint { Entity :: foobar ( ) }";
+             Java_Entity_foobar ( env : roast :: JNIEnv , _class : roast :: JClass ) -> \
+             roast :: jint { roast :: convert :: convert_retval_i32 ( & env , Entity :: foobar ( ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -438,10 +462,9 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
-             ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) -> \
-             ( ) { Entity :: foobar ( a ) }";
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) \
+                        { Entity :: foobar ( a ) }";
         assert_eq!(expected, exported);
     }
 
@@ -496,9 +519,11 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
-                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
-                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foobar ( a , b ) }";
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
+             b : roast :: jshort ) -> roast :: jboolean \
+             { roast :: convert :: convert_retval_bool ( & env , Entity :: foobar ( a , b ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -560,11 +585,12 @@ mod tests {
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
-                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
-                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foo ( a , b ) } \
-                        # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
-                        ( _env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jint \
-                        { Entity :: bar ( ) }";
+                        ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
+                        b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: \
+                        convert_retval_bool ( & env , Entity :: foo ( a , b ) ) } # [ no_mangle ] \
+                        pub extern \"system\" fn Java_Entity_bar ( env : roast :: JNIEnv , \
+                        _class : roast :: JClass ) -> roast :: jint { roast :: convert :: \
+                        convert_retval_i32 ( & env , Entity :: bar ( ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -628,11 +654,43 @@ mod tests {
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
-                        ( _env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , \
-                        b : roast :: jshort ) -> roast :: jboolean { Entity :: foo ( a , b ) } \
-                        # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar ( \
-                        _env : roast :: JNIEnv , _class : roast :: JClass ) -> \
-                        roast :: jint { Entity :: bar ( ) }";
+        ( env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , \
+        b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
+        ( & env , Entity :: foo ( a , b ) ) } # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
+        ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jint \
+        { roast :: convert :: convert_retval_i32 ( & env , Entity :: bar ( ) ) }";
         assert_eq!(expected, exported);
+    }
+
+    #[test]
+    fn ffi_convert_string_return_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("myfunc", Some("String".into()), vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
+             ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jstring \
+             { roast :: convert :: convert_retval_string ( & env , Entity :: myfunc ( ) ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
+    fn java_convert_string_return_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("myfunc", Some("String".into()), vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+
+        let expected = r#"public class Entity {
+
+	static {
+		System.loadLibrary("mylib");
+	}
+
+	public static native String myfunc();
+
+}
+"#;
+        assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
     }
 }
