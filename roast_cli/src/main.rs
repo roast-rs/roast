@@ -100,8 +100,8 @@ fn run_build(_m: &ArgMatches) {
     debug!("Spec loaded from path {}:\n{:#?}", &path, &spec);
 
     info!("Copying build artifact into java scope");
-    let from = format!("{}/lib{}.dylib", spec.bin_source, spec.name);
-    let to = format!("{}/lib{}.dylib", spec.bin_target, spec.name);
+    let from = format!("{}/lib{}.dylib", spec.bin_source(), spec.name());
+    let to = format!("{}/lib{}.dylib", spec.bin_target(), spec.name());
     debug!("Copying from {} to {}", from, to);
     match fs::copy(from, to) {
         Ok(_) => debug!("Copying completed"),
@@ -112,8 +112,8 @@ fn run_build(_m: &ArgMatches) {
     };
 
     info!("Copying generated java sources into java scope");
-    let from = spec.java_source;
-    let to = spec.java_target;
+    let from = spec.java_source();
+    let to = spec.java_target();
     debug!("Copying from {} to {}", from, to);
     match Command::new("cp").arg("-r").arg(from).arg(to).output() {
         Ok(o) => debug!("`cp -r` result {}", convert_output(&o)),
