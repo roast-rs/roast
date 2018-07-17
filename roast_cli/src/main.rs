@@ -80,7 +80,7 @@ fn main() {
 /// java can pick it up and then also copies the generated
 /// java files into java's scope.
 fn run_build(_m: &ArgMatches) {
-    info!("Building the rust project via `cargo build`");
+    info!("Building the rust project via `cargo build` (this may take a while)");
 
     match Command::new("cargo").arg("build").arg("-vv").output() {
         Ok(ref o) if o.status.success() => {

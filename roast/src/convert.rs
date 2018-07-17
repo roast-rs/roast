@@ -23,16 +23,6 @@ pub fn convert_arg_jint(_env: &JNIEnv, input: jint) -> i32 {
 }
 
 #[inline]
-pub fn convert_retval_u8(_env: &JNIEnv, input: u8) -> jboolean {
-    input
-}
-
-#[inline]
-pub fn convert_arg_jboolean(_env: &JNIEnv, input: jboolean) -> u8 {
-    input
-}
-
-#[inline]
 pub fn convert_retval_i16(_env: &JNIEnv, input: i16) -> jshort {
     input
 }
@@ -80,6 +70,20 @@ pub fn convert_retval_f64(_env: &JNIEnv, input: f64) -> jdouble {
 #[inline]
 pub fn convert_arg_jdouble(_env: &JNIEnv, input: jdouble) -> f64 {
     input
+}
+
+#[inline]
+pub fn convert_retval_bool(_env: &JNIEnv, input: bool) -> jboolean {
+    if input {
+        1u8
+    } else {
+        0u8
+    }
+}
+
+#[inline]
+pub fn convert_arg_jboolean(_env: &JNIEnv, input: jboolean) -> bool {
+    input == 1u8
 }
 
 /// Converts a return value rust string into a java string.
