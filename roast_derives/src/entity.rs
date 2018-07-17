@@ -99,25 +99,36 @@ impl DerivedEntity {
 
             let mut args = vec![];
             let mut inner_args = vec![];
-            // add JNI env
-            if raw_ret_type.is_some() {
-                // for now we only need the env if we parse return values
-                args.push(self.raw_arg_to_expr("env", "roast::JNIEnv"));
-            } else {
-                args.push(self.raw_arg_to_expr("_env", "roast::JNIEnv"));
-            }
-            // add JCLass (static method?)
-            if func.is_static() {
-                args.push(self.raw_arg_to_expr("_class", "roast::JClass"));
-            } else {
-                args.push(self.raw_arg_to_expr("_obj", "roast::JObject"));
-            }
+
             // add custom args
             for arg in &func.args {
                 if let DerivedFnArg::Captured { name, ty } = arg {
                     args.push(self.raw_arg_to_expr(&name, rust_to_jni_type(&ty).unwrap()));
-                    inner_args.push(Ident::new(&name, Span::call_site()));
+
+                    let convert_fn = format!(
+                        "roast::convert::convert_arg_{}(&env, {})",
+                        rust_to_jni_type(&ty)
+                            .unwrap()
+                            .replace("roast::", "")
+                            .to_lowercase(),
+                        name
+                    );
+                    inner_args.push(parse_str::<Expr>(&convert_fn).unwrap());
                 }
+            }
+
+            // add JNI env
+            if raw_ret_type.is_some() || !inner_args.is_empty() {
+                // for now we only need the env if we parse return values
+                args.insert(0, self.raw_arg_to_expr("env", "roast::JNIEnv"));
+            } else {
+                args.insert(0, self.raw_arg_to_expr("_env", "roast::JNIEnv"));
+            }
+            // add JCLass (static method?)
+            if func.is_static() {
+                args.insert(1, self.raw_arg_to_expr("_class", "roast::JClass"));
+            } else {
+                args.insert(1, self.raw_arg_to_expr("_obj", "roast::JObject"));
             }
 
             // todo: switch some
@@ -242,7 +253,6 @@ fn rust_to_java_type(ty: &str) -> Option<&'static str> {
         "i16" => "short",
         "u16" => "char",
         "i32" => "int",
-        "u32" => "long",
         "i64" => "long",
         "f32" => "float",
         "f64" => "double",
@@ -260,12 +270,11 @@ fn rust_to_jni_type(ty: &str) -> Option<&'static str> {
         "i16" => "roast::jshort",
         "u16" => "roast::jchar",
         "i32" => "roast::jint",
-        "u32" => "roast::jlong",
         "i64" => "roast::jlong",
         "f32" => "roast::jfloat",
         "f64" => "roast::jdouble",
         "bool" => "roast::jboolean",
-        "String" => "roast::jstring",
+        "String" => "roast::JString",
         _ => return None,
     })
 }
@@ -282,7 +291,6 @@ mod tests {
         assert_eq!(Some("short"), rust_to_java_type("i16"));
         assert_eq!(Some("char"), rust_to_java_type("u16"));
         assert_eq!(Some("int"), rust_to_java_type("i32"));
-        assert_eq!(Some("long"), rust_to_java_type("u32"));
         assert_eq!(Some("long"), rust_to_java_type("i64"));
         assert_eq!(Some("float"), rust_to_java_type("f32"));
         assert_eq!(Some("double"), rust_to_java_type("f64"));
@@ -297,12 +305,11 @@ mod tests {
         assert_eq!(Some("roast::jshort"), rust_to_jni_type("i16"));
         assert_eq!(Some("roast::jchar"), rust_to_jni_type("u16"));
         assert_eq!(Some("roast::jint"), rust_to_jni_type("i32"));
-        assert_eq!(Some("roast::jlong"), rust_to_jni_type("u32"));
         assert_eq!(Some("roast::jlong"), rust_to_jni_type("i64"));
         assert_eq!(Some("roast::jfloat"), rust_to_jni_type("f32"));
         assert_eq!(Some("roast::jdouble"), rust_to_jni_type("f64"));
         assert_eq!(Some("roast::jboolean"), rust_to_jni_type("bool"));
-        assert_eq!(Some("roast::jstring"), rust_to_jni_type("String"));
+        assert_eq!(Some("roast::JString"), rust_to_jni_type("String"));
     }
 
     #[test]
@@ -480,9 +487,10 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
-                        ( _env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) \
-                        { Entity :: foobar ( a ) }";
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) \
+             { Entity :: foobar ( roast :: convert :: convert_arg_jlong ( & env , a ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -537,11 +545,12 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
-             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
-             b : roast :: jshort ) -> roast :: jboolean \
-             { roast :: convert :: convert_retval_bool ( & env , Entity :: foobar ( a , b ) ) }";
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+                        ( env : roast :: JNIEnv , _class : roast :: JClass , \
+                        a : roast :: jint , b : roast :: jshort ) -> roast :: jboolean \
+                        { roast :: convert :: convert_retval_bool ( & env , Entity :: foobar \
+                        ( roast :: convert :: convert_arg_jint ( & env , a ) , \
+                        roast :: convert :: convert_arg_jshort ( & env , b ) ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -602,13 +611,15 @@ mod tests {
 
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
-                        ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
-                        b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: \
-                        convert_retval_bool ( & env , Entity :: foo ( a , b ) ) } # [ no_mangle ] \
-                        pub extern \"system\" fn Java_Entity_bar ( env : roast :: JNIEnv , \
-                        _class : roast :: JClass ) -> roast :: jint { roast :: convert :: \
-                        convert_retval_i32 ( & env , Entity :: bar ( ) ) }";
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
+             b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
+             ( & env , Entity :: foo ( roast :: convert :: convert_arg_jint ( & env , a ) , \
+             roast :: convert :: convert_arg_jshort ( & env , b ) ) ) } \
+             # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar ( env : roast :: JNIEnv , \
+             _class : roast :: JClass ) -> roast :: jint { roast :: convert :: convert_retval_i32 \
+             ( & env , Entity :: bar ( ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -671,12 +682,15 @@ mod tests {
 
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_getFooBar \
-        ( env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , \
-        b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
-        ( & env , Entity :: get_foo_bar ( a , b ) ) } # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar \
-        ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jint \
-        { roast :: convert :: convert_retval_i32 ( & env , Entity :: bar ( ) ) }";
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_getFooBar \
+             ( env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , b : \
+             roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
+             ( & env , Entity :: get_foo_bar ( roast :: convert :: convert_arg_jint ( & env , a ) \
+             , roast :: convert :: convert_arg_jshort ( & env , b ) ) ) } \
+             # [ no_mangle ] pub extern \"system\" fn Java_Entity_bar ( env : roast :: JNIEnv , \
+             _class : roast :: JClass ) -> roast :: jint { roast :: convert :: convert_retval_i32 \
+             ( & env , Entity :: bar ( ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -712,4 +726,48 @@ mod tests {
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
     }
 
+    #[test]
+    fn ffi_convert_string_arg_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "myfunc",
+            None,
+            vec![DerivedFnArg::Captured {
+                name: "a".into(),
+                ty: "String".into(),
+            }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: JString ) \
+             { Entity :: myfunc ( roast :: convert :: convert_arg_jstring ( & env , a ) ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
+    fn java_convert_string_arg_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "myfunc",
+            None,
+            vec![DerivedFnArg::Captured {
+                name: "a".into(),
+                ty: "String".into(),
+            }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let expected = r#"public class Entity {
+
+	static {
+		System.loadLibrary("mylib");
+	}
+
+	public static native void myfunc(String a);
+
+}
+"#;
+        assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
 }

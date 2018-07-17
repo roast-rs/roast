@@ -114,7 +114,6 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
             }
         }
     }
-
     methods
 }
 
