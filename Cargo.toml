@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "roast",
+    "roast_cli",
+    "roast_derives",
+    "roast_testlab",
+]
