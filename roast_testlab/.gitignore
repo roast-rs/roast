@@ -2,3 +2,5 @@ target/
 Cargo.lock
 **/*.rs.bk
 roast.json
+src/main/java/*.java
+src/main/resources/libroast_testlab*
