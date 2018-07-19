@@ -6,7 +6,7 @@ description = "Artisan roasted Java for your coding pleasure"
 license = "Apache-2.0"
 
 build = "build.rs"
-include = ["templates"]
+include = ["/templates/*"]
 
 [[bin]]
 name = "roast"
