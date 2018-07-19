@@ -2,6 +2,7 @@
 name = "roast_derives"
 version = "0.1.0"
 authors = ["Michael Nitschinger <michael@nitschinger.at>"]
+license = "Apache-2.0"
 
 [dependencies]
 syn = { version = "0.14", features = ["full", "extra-traits"] }

@@ -2,6 +2,7 @@
 name = "roast"
 version = "0.1.0"
 authors = ["Michael Nitschinger <michael@nitschinger.at>"]
+license = "Apache-2.0"
 
 [dependencies]
 roast_derives = { version = "0.1", path = "../roast_derives" }
