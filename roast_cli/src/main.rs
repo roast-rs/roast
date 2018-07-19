@@ -100,8 +100,15 @@ fn run_build(_m: &ArgMatches) {
     debug!("Spec loaded from path {}:\n{:#?}", &path, &spec);
 
     info!("Copying build artifact into java scope");
-    let from = format!("{}/lib{}.dylib", spec.bin_source(), spec.name());
-    let to = format!("{}/lib{}.dylib", spec.bin_target(), spec.name());
+    let extension = if cfg!(windows) {
+            "dll"
+    } else if cfg!(unix) {
+        "so"
+    } else {
+        "dylib"
+    };
+    let from = format!("{}/lib{}.{}", spec.bin_source(), spec.name(), extension);
+    let to = format!("{}/lib{}.{}", spec.bin_target(), spec.name(), extension);
     debug!("Copying from {} to {}", from, to);
     match fs::copy(from, to) {
         Ok(_) => debug!("Copying completed"),
