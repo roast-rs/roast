@@ -3,6 +3,12 @@ rust:
   - stable
   - beta
   - nightly
+os:
+  - osx
+  - linux
+notifications:
+  email:
+    on_success: never
 matrix:
   allow_failures:
     - rust: nightly
