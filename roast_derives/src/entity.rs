@@ -33,6 +33,15 @@ pub enum DerivedFnArg {
     },
 }
 
+impl DerivedFnArg {
+    fn java_name(&self) -> Option<String> {
+        match self {
+            DerivedFnArg::Captured { name, .. } => Some(name.to_camel_case()),
+            _ => None,
+        }
+    }
+}
+
 impl DerivedFn {
     pub fn new(name: &str, return_type: Option<String>, args: Vec<DerivedFnArg>) -> Self {
         DerivedFn {
@@ -102,8 +111,11 @@ impl DerivedEntity {
 
             // add custom args
             for arg in &func.args {
-                if let DerivedFnArg::Captured { name, ty } = arg {
-                    args.push(self.raw_arg_to_expr(&name, rust_to_jni_type(&ty).unwrap()));
+                if let DerivedFnArg::Captured { name: _name, ty } = arg {
+                    args.push(self.raw_arg_to_expr(
+                        &arg.java_name().unwrap(),
+                        rust_to_jni_type(&ty).unwrap(),
+                    ));
 
                     let convert_fn = format!(
                         "roast::convert::convert_arg_{}(&env, {})",
@@ -111,7 +123,7 @@ impl DerivedEntity {
                             .unwrap()
                             .replace("roast::", "")
                             .to_lowercase(),
-                        name
+                        &arg.java_name().unwrap()
                     );
                     inner_args.push(parse_str::<Expr>(&convert_fn).unwrap());
                 }
@@ -178,8 +190,12 @@ impl DerivedEntity {
             let return_type = rust_to_java_return_type(&func)?;
             let mut args = vec![];
             for arg in &func.args {
-                if let DerivedFnArg::Captured { name, ty } = arg {
-                    args.push(format!("{} {}", rust_to_java_type(&ty).unwrap(), name));
+                if let DerivedFnArg::Captured { name: _name, ty } = arg {
+                    args.push(format!(
+                        "{} {}",
+                        rust_to_java_type(&ty).unwrap(),
+                        arg.java_name().unwrap()
+                    ));
                 }
             }
 
@@ -730,19 +746,19 @@ mod tests {
     fn ffi_convert_string_arg_value() {
         let mut fns = vec![];
         fns.push(DerivedFn::new(
-            "myfunc",
+            "my_func",
             None,
             vec![DerivedFnArg::Captured {
-                name: "a".into(),
+                name: "my_var".into(),
                 ty: "String".into(),
             }],
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
-             ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: JString ) \
-             { Entity :: myfunc ( roast :: convert :: convert_arg_jstring ( & env , a ) ) }";
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , myVar : roast :: JString ) \
+             { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , myVar ) ) }";
         assert_eq!(expected, exported);
     }
 
@@ -750,10 +766,10 @@ mod tests {
     fn java_convert_string_arg_value() {
         let mut fns = vec![];
         fns.push(DerivedFn::new(
-            "myfunc",
+            "my_func",
             None,
             vec![DerivedFnArg::Captured {
-                name: "a".into(),
+                name: "my_var".into(),
                 ty: "String".into(),
             }],
         ));
@@ -764,7 +780,7 @@ mod tests {
 		System.loadLibrary("mylib");
 	}
 
-	public static native void myfunc(String a);
+	public static native void myFunc(String myVar);
 
 }
 "#;

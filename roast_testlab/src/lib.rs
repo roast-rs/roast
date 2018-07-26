@@ -26,7 +26,7 @@ impl Strings {
         input.chars().rev().collect()
     }
 
-    pub fn count_chars(input: String) -> i32 {
-        input.chars().count() as i32
+    pub fn count_chars(chars_to_count: String) -> i32 {
+        chars_to_count.chars().count() as i32
     }
 }
