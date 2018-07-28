@@ -34,6 +34,13 @@ pub enum DerivedFnArg {
 }
 
 impl DerivedFnArg {
+    fn name(&self) -> Option<String> {
+        match self {
+            DerivedFnArg::Captured { name, .. } => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     fn java_name(&self) -> Option<String> {
         match self {
             DerivedFnArg::Captured { name, .. } => Some(name.to_camel_case()),
@@ -113,7 +120,7 @@ impl DerivedEntity {
             for arg in &func.args {
                 if let DerivedFnArg::Captured { name: _name, ty } = arg {
                     args.push(self.raw_arg_to_expr(
-                        &arg.java_name().unwrap(),
+                        &arg.name().unwrap(),
                         rust_to_jni_type(&ty).unwrap(),
                     ));
 
@@ -123,7 +130,7 @@ impl DerivedEntity {
                             .unwrap()
                             .replace("roast::", "")
                             .to_lowercase(),
-                        &arg.java_name().unwrap()
+                        &arg.name().unwrap()
                     );
                     inner_args.push(parse_str::<Expr>(&convert_fn).unwrap());
                 }
@@ -757,8 +764,8 @@ mod tests {
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected =
             "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
-             ( env : roast :: JNIEnv , _class : roast :: JClass , myVar : roast :: JString ) \
-             { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , myVar ) ) }";
+             ( env : roast :: JNIEnv , _class : roast :: JClass , my_var : roast :: JString ) \
+             { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , my_var ) ) }";
         assert_eq!(expected, exported);
     }
 
