@@ -809,4 +809,82 @@ mod tests {
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
     }
+
+    #[test]
+    fn ffi_convert_bytearray_arg_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "my_func",
+            None,
+            vec![DerivedFnArg::Captured {
+                name: "my_var".into(),
+                ty: "Vec<u8>".into(),
+            }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
+             ( env : roast :: JNIEnv , _class : roast :: JClass , my_var : roast :: jbyteArray ) \
+             { Entity :: my_func ( roast :: convert :: convert_arg_jbytearray ( & env , my_var ) ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
+    fn java_convert_bytearray_arg_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new(
+            "my_func",
+            None,
+            vec![DerivedFnArg::Captured {
+                name: "my_var".into(),
+                ty: "Vec<u8>".into(),
+            }],
+        ));
+        let derived = DerivedEntity::new("Entity", fns);
+        let expected = r#"public class Entity {
+
+	static {
+		System.loadLibrary("mylib");
+	}
+
+	public static native void myFunc(byte[] myVar);
+
+}
+"#;
+        assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
+    #[test]
+    fn ffi_convert_bytearray_return_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("myfunc", Some("Vec<u8>".into()), vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+        let exported = format!("{}", derived.export_jni_ffi_tokens());
+        let expected =
+            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
+             ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jbyteArray \
+             { roast :: convert :: convert_retval_vecu8 ( & env , Entity :: myfunc ( ) ) }";
+        assert_eq!(expected, exported);
+    }
+
+    #[test]
+    fn java_convert_bytearray_return_value() {
+        let mut fns = vec![];
+        fns.push(DerivedFn::new("myfunc", Some("Vec<u8>".into()), vec![]));
+        let derived = DerivedEntity::new("Entity", fns);
+
+        let expected = r#"public class Entity {
+
+	static {
+		System.loadLibrary("mylib");
+	}
+
+	public static native byte[] myfunc();
+
+}
+"#;
+        assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
+    }
+
 }
