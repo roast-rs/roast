@@ -20,6 +20,7 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use syn::{parse_file, DeriveInput, FnArg, ImplItem, Item, Pat, ReturnType, Type, Visibility};
+use quote::ToTokens;
 use walkdir::WalkDir;
 
 #[proc_macro_derive(RoastExport)]
@@ -121,13 +122,7 @@ fn extract_return_type(ty: &ReturnType) -> Option<String> {
     match ty {
         ReturnType::Default => None,
         ReturnType::Type(_, t) => match **t {
-            Type::Path(ref p) => {
-                // this is a hack to only look at the first elem?
-                Some(format!(
-                    "{}",
-                    &p.path.segments.first().unwrap().value().ident
-                ))
-            }
+            Type::Path(ref p) => Some(tokens_to_string(*p.path.segments.first().unwrap().value())),
             _ => panic!("Unable to extract return type {:?}", ty),
         },
     }
@@ -147,4 +142,16 @@ fn write_java_class(entity: &DerivedEntity) {
     };
     let path = format!("{}/{}.java", java_dir, entity.name());
     fs::write(&path, exported.as_bytes()).unwrap();
+}
+
+/// Helper method which turns everything that can be converted into tokens into a String.
+///
+/// Note that it tries to be semi-intelling on removing whitespace so the output actually
+/// looks okay.
+fn tokens_to_string<I: ToTokens>(input: &I) -> String {
+    let mut ts = proc_macro2::TokenStream::new();
+    input.to_tokens(&mut ts);
+    let converted = format!("{}", ts);
+    let whitespace_removed = converted.replace(" ", "");
+    whitespace_removed
 }
