@@ -83,10 +83,7 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
                                                 _ => panic!("unsupported arg signature in name"),
                                             };
                                             let ty = match &a.ty {
-                                                Type::Path(p) => format!(
-                                                    "{}",
-                                                    p.path.segments.first().unwrap().value().ident
-                                                ),
+                                                Type::Path(p) => tokens_to_string(*p.path.segments.first().unwrap().value()),
                                                 _ => panic!("unsupported arg signature in type"),
                                             };
                                             args.push(DerivedFnArg::Captured { name, ty });

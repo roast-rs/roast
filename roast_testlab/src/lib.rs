@@ -30,3 +30,13 @@ impl Strings {
         chars_to_count.chars().count() as i32
     }
 }
+
+#[derive(Debug, RoastExport)]
+struct Arrays {}
+
+impl Arrays {
+    pub fn reverse_byte_arr(mut input: Vec<u8>) -> Vec<u8> {
+        input.reverse();
+        input
+    }
+}

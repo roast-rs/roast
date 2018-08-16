@@ -68,6 +68,12 @@ impl DerivedFn {
     pub fn java_name(&self) -> String {
         self.name.to_camel_case()
     }
+
+    /// Takes the return type but simply removes all invalid chars so it can
+    /// be used in rust code as part of the function signatures.
+    pub fn sanitized_return_type(&self) -> Option<String> {
+        self.return_type.as_ref().map(|t| t.replace("<", "").replace(">", "").replace(" ", ""))
+    }
 }
 
 /// Describes the entity which is derived with methods and all.
@@ -113,19 +119,19 @@ impl DerivedEntity {
             for arg in &func.args {
                 if let DerivedFnArg::Captured { name: _name, ty } = arg {
                     args.push(self.raw_arg_to_expr(
-                        &arg.java_name().unwrap(),
-                        rust_to_jni_type(&ty).unwrap(),
+                        &arg.java_name().expect("Could not read java name"),
+                        rust_to_jni_type(&ty).expect("Could not convert rust to jni type"),
                     ));
 
                     let convert_fn = format!(
                         "roast::convert::convert_arg_{}(&env, {})",
                         rust_to_jni_type(&ty)
-                            .unwrap()
+                            .expect("Could not convert rust to jni type")
                             .replace("roast::", "")
                             .to_lowercase(),
-                        &arg.java_name().unwrap()
+                        &arg.java_name().expect("Could not read java name")
                     );
-                    inner_args.push(parse_str::<Expr>(&convert_fn).unwrap());
+                    inner_args.push(parse_str::<Expr>(&convert_fn).expect("Could not parse expression"));
                 }
             }
 
@@ -156,7 +162,7 @@ impl DerivedEntity {
                 let retval = parse_str::<Expr>(&raw_ret_type.unwrap()).unwrap();
                 let convert_fn = format!(
                     "roast::convert::convert_retval_{}",
-                    func.return_type.as_ref().unwrap().to_lowercase()
+                    func.sanitized_return_type().as_ref().unwrap().to_lowercase()
                 );
                 let convert_ret_fn_name = parse_str::<Expr>(&convert_fn).unwrap();
                 // we got a return value, so add a conversion wrapper
@@ -274,6 +280,7 @@ fn rust_to_java_type(ty: &str) -> Option<&'static str> {
         "f64" => "double",
         "bool" => "boolean",
         "String" => "String",
+        "Vec<u8>" => "byte[]",
         _ => return None,
     })
 }
@@ -291,6 +298,7 @@ fn rust_to_jni_type(ty: &str) -> Option<&'static str> {
         "f64" => "roast::jdouble",
         "bool" => "roast::jboolean",
         "String" => "roast::JString",
+        "Vec<u8>" => "roast::jbyteArray",
         _ => return None,
     })
 }
@@ -312,6 +320,7 @@ mod tests {
         assert_eq!(Some("double"), rust_to_java_type("f64"));
         assert_eq!(Some("boolean"), rust_to_java_type("bool"));
         assert_eq!(Some("String"), rust_to_java_type("String"));
+        assert_eq!(Some("byte[]"), rust_to_java_type("Vec<u8>"));
     }
 
     #[test]
@@ -326,6 +335,7 @@ mod tests {
         assert_eq!(Some("roast::jdouble"), rust_to_jni_type("f64"));
         assert_eq!(Some("roast::jboolean"), rust_to_jni_type("bool"));
         assert_eq!(Some("roast::JString"), rust_to_jni_type("String"));
+        assert_eq!(Some("roast::jbyteArray"), rust_to_jni_type("Vec<u8>"));
     }
 
     #[test]
