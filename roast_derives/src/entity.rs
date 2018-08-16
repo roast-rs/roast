@@ -34,6 +34,13 @@ pub enum DerivedFnArg {
 }
 
 impl DerivedFnArg {
+    fn name(&self) -> Option<String> {
+        match self {
+            DerivedFnArg::Captured { name, .. } => Some(name.clone()),
+            _ => None,
+        }
+    }
+
     fn java_name(&self) -> Option<String> {
         match self {
             DerivedFnArg::Captured { name, .. } => Some(name.to_camel_case()),
@@ -72,7 +79,9 @@ impl DerivedFn {
     /// Takes the return type but simply removes all invalid chars so it can
     /// be used in rust code as part of the function signatures.
     pub fn sanitized_return_type(&self) -> Option<String> {
-        self.return_type.as_ref().map(|t| t.replace("<", "").replace(">", "").replace(" ", ""))
+        self.return_type
+            .as_ref()
+            .map(|t| t.replace("<", "").replace(">", "").replace(" ", ""))
     }
 }
 
@@ -119,7 +128,7 @@ impl DerivedEntity {
             for arg in &func.args {
                 if let DerivedFnArg::Captured { name: _name, ty } = arg {
                     args.push(self.raw_arg_to_expr(
-                        &arg.java_name().expect("Could not read java name"),
+                        &arg.name().expect("Could not read java name"),
                         rust_to_jni_type(&ty).expect("Could not convert rust to jni type"),
                     ));
 
@@ -129,9 +138,10 @@ impl DerivedEntity {
                             .expect("Could not convert rust to jni type")
                             .replace("roast::", "")
                             .to_lowercase(),
-                        &arg.java_name().expect("Could not read java name")
+                        &arg.name().expect("Could not read java name")
                     );
-                    inner_args.push(parse_str::<Expr>(&convert_fn).expect("Could not parse expression"));
+                    inner_args
+                        .push(parse_str::<Expr>(&convert_fn).expect("Could not parse expression"));
                 }
             }
 
@@ -162,7 +172,10 @@ impl DerivedEntity {
                 let retval = parse_str::<Expr>(&raw_ret_type.unwrap()).unwrap();
                 let convert_fn = format!(
                     "roast::convert::convert_retval_{}",
-                    func.sanitized_return_type().as_ref().unwrap().to_lowercase()
+                    func.sanitized_return_type()
+                        .as_ref()
+                        .unwrap()
+                        .to_lowercase()
                 );
                 let convert_ret_fn_name = parse_str::<Expr>(&convert_fn).unwrap();
                 // we got a return value, so add a conversion wrapper
@@ -767,8 +780,8 @@ mod tests {
         let exported = format!("{}", derived.export_jni_ffi_tokens());
         let expected =
             "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
-             ( env : roast :: JNIEnv , _class : roast :: JClass , myVar : roast :: JString ) \
-             { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , myVar ) ) }";
+             ( env : roast :: JNIEnv , _class : roast :: JClass , my_var : roast :: JString ) \
+             { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , my_var ) ) }";
         assert_eq!(expected, exported);
     }
 
