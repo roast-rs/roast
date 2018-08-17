@@ -1,0 +1,282 @@
+= Roast Documentation
+
+== Introduction
+
+Roast provides safe and fast bindings between Rust and Java, utilizing Java JNI and Rust FFI.
+
+The design goal of roast is to perform as much code generation as possible, reducing boilerplate and allowing the library author to focus on the actual logic instead of writing and maintaining boilerplate.
+
+In a nutshell, roast provides:
+
+ - a cli tool (`roast`) to perform tasks like creating a new project and building it
+ - integration with java tooling like maven
+ - code generation of Java JNI code as well as rust FFI bindings
+ - transparent mapping between types where possible
+
+While performance is definitely a goal, in these early releases the focus is on minimal boilerplate and a streamlined workflow.
+
+== Setup
+
+You need a recent rust version installed, for now we just always track the latest stable release. Also, we are currently only running on OSX and Linux, so your mileage on Windows will vary. As soon as we ship released versions, you can grab the cli tool via `cargo`:
+
+```
+$ cargo install -f roast_cli
+```
+
+For now you need to clone the project and build the cli tool yourself.
+
+```
+$ git clone https://github.com/roast-rs/roast
+$ cd roast/roast_cli
+$ cargo build
+```
+
+And then either put the binary from the `target/debug/roast` or production into the PATH or reference it as an absolute path when using it.
+
+== Project Creation
+
+The CLI tool provides a command to generate a project out of a template. For now only a simplistic maven template is supported, but we are planning on adding gradle in the future too.
+
+With the `new` command you can generate a new project:
+
+```
+$ roast new -h
+roast-new 
+Generates a new roast project
+
+USAGE:
+    roast new [OPTIONS] <name>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -f, --flavor <flavor>      Sets the java build flavor of the project [default: maven]  [possible values: maven]
+    -g, --groupid <groupid>    Sets the group id for the java project
+
+ARGS:
+    <name>    The name of the project
+```
+
+```
+$ roast new --flavor maven --groupid rs.roast.example hello 
+roast: Creating project hello
+```
+
+Looking into the directory, we can see that there is a skeleton already in place:
+
+```
+$ cd hello
+$ tree .
+.
+├── Cargo.toml
+├── build.rs
+├── pom.xml
+└── src
+    ├── lib.rs
+    ├── main
+    │   ├── java
+    │   └── resources
+    └── test
+        └── java
+            └── HelloWorldTest.java
+```
+
+Congratulations! You've created your first project. Now we can build and run it.
+
+== Build Workflow
+
+From now on the `build` command of the CLI tool will be more important. Let's use it right away!
+
+```
+$ roast build
+roast: Building the rust project via `cargo build`
+roast: Copying build artifact into java scope
+roast: Copying generated java sources into java scope
+roast: Build complete! Enjoy your roast!
+```
+
+The first time, depending on the speed of your laptop, it might take some time since it is compiling all the dependencies. Subsequent builds will be much faster.
+
+If you want to get more details on what's going on under the hood, you can use `roast -v build` or `-vv` for even more info.
+
+At this point roast has built the native library and generated the corresponding java code. For the following rust code:
+
+```rs
+#[macro_use]
+extern crate roast;
+
+#[derive(Debug, RoastExport)]
+struct HelloWorld {}
+
+impl HelloWorld {
+
+    pub fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+}
+```
+
+roast generated:
+
+```java
+public class HelloWorld {
+  
+        static {
+                System.loadLibrary("hello");
+        }
+
+        public static native int add(int a, int b);
+
+}
+```
+
+The generated template already created a test for us, so we can run `mvn test`:
+
+```
+$ mvn test
+*snip*
+-------------------------------------------------------
+ T E S T S
+-------------------------------------------------------
+Running HelloWorldTest
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.055 sec
+
+Results :
+
+Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 2.937 s
+[INFO] Finished at: 2018-08-17T17:41:32+02:00
+[INFO] ------------------------------------------------------------------------
+```
+
+To illustrate the flow, modify the `src/lib.rs` from `a + b` to `a - b`:
+
+```rs
+    pub fn add(a: i32, b: i32) -> i32 {
+        a - b
+    }
+```
+
+Rebuild:
+
+```
+$ roast build
+```
+
+and rerun the test!
+
+```
+$ mvn test
+*snip*
+-------------------------------------------------------
+ T E S T S
+-------------------------------------------------------
+Running HelloWorldTest
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.058 sec <<< FAILURE!
+add(HelloWorldTest)  Time elapsed: 0.013 sec  <<< FAILURE!
+java.lang.AssertionError: expected:<3> but was:<-1>
+	at org.junit.Assert.fail(Assert.java:88)
+    ...
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:75)
+
+
+Results :
+
+Failed tests:   add(HelloWorldTest): expected:<3> but was:<-1>
+
+Tests run: 1, Failures: 1, Errors: 0, Skipped: 0
+
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD FAILURE
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time: 1.607 s
+[INFO] Finished at: 2018-08-17T17:43:18+02:00
+[INFO] ------------------------------------------------------------------------
+```
+
+== From Rust to Java
+
+Since the whole concept of roast is to write rust code and get java code generated, it makes sense to talk about how that works in practice.
+
+Let's look a bit closer at the hello world example:
+
+```rs
+#[macro_use]
+extern crate roast;
+
+#[derive(Debug, RoastExport)]
+struct HelloWorld {}
+
+impl HelloWorld {
+
+    pub fn add(a: i32, b: i32) -> i32 {
+        a + b
+    }
+
+}
+```
+
+Every struct that wants to be exported to java needs to derive `RoastExport`. This will trigger the custom derive at build time that scans all public functions and exposes them to java. Private functions are not exposed.
+
+Also you'll note that there is a `build.rs` file in your project:
+
+```rs
+extern crate roast;
+
+use roast::build::BuildConfig;
+
+fn main() {
+    roast::build::build(BuildConfig::default());
+}
+```
+
+This build file triggers the generation of the `roast.json` file in your directory that is then picked up by the CLI. Based on this metadata file the CLI knows where to grab the generated files from and copy it into the right places. You can also customize the `BuildConfig` if you need to.
+
+== Type Mappings
+
+Roast needs to perform mapping between rust types and java types on all functions it exposes. Here is the current table of supported conversions:
+
+.Table Title
+|===
+|Rust Type |Java type 
+|i8
+|byte
+|u8
+|boolean
+|i16
+|short
+|u16
+|char
+|i32
+|int
+|i64
+|long
+|f32
+|float
+|f64
+|double
+|bool
+|boolean
+|String
+|String
+|Vec<u8>
+|byte[]
+|===
+
+These type mappings work both for arguments and return types.
+
+We are planning to add more and custom types in the future, but this is what is currently supported.
+
+== Examples
+
+For now you can find examples:
+
+ - In the https://github.com/roast-rs/roast/tree/master/roast_testlab[Testlab]
+ - In the https://github.com/roast-rs/snappers[snappers] project for doing snappy compression
