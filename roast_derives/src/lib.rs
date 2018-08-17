@@ -51,7 +51,7 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
     let mut methods = vec![];
     for entry in WalkDir::new(rootdir) {
         let e = entry.expect("could not decode entry");
-        if e.file_name().to_str().unwrap().ends_with("rs") {
+        if e.file_name().to_str().unwrap().ends_with(".rs") {
             let mut file = File::open(&e.path())
                 .expect(&format!("Unable to open file at path {:?}", &e.path()));
             let mut src = String::new();
