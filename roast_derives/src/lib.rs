@@ -14,13 +14,13 @@ mod entity;
 use entity::{DerivedEntity, DerivedFn, DerivedFnArg};
 use inflector::Inflector;
 use proc_macro::TokenStream;
+use quote::ToTokens;
 use std::env;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 use syn::{parse_file, DeriveInput, FnArg, ImplItem, Item, Pat, ReturnType, Type, Visibility};
-use quote::ToTokens;
 use walkdir::WalkDir;
 
 #[proc_macro_derive(RoastExport)]
@@ -52,9 +52,11 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
     for entry in WalkDir::new(rootdir) {
         let e = entry.expect("could not decode entry");
         if e.file_name().to_str().unwrap().ends_with("rs") {
-            let mut file = File::open(&e.path()).expect("Unable to open file");
+            let mut file = File::open(&e.path())
+                .expect(&format!("Unable to open file at path {:?}", &e.path()));
             let mut src = String::new();
-            file.read_to_string(&mut src).expect("Unable to read file");
+            file.read_to_string(&mut src)
+                .expect(&format!("Unable to read file at path {:?}", &e.path()));
             let syntax = parse_file(&src).expect("Unable to parse file");
             for item in syntax.items {
                 if let Item::Impl(i) = item {
@@ -83,7 +85,9 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
                                                 _ => panic!("unsupported arg signature in name"),
                                             };
                                             let ty = match &a.ty {
-                                                Type::Path(p) => tokens_to_string(*p.path.segments.first().unwrap().value()),
+                                                Type::Path(p) => tokens_to_string(
+                                                    *p.path.segments.first().unwrap().value(),
+                                                ),
                                                 _ => panic!("unsupported arg signature in type"),
                                             };
                                             args.push(DerivedFnArg::Captured { name, ty });

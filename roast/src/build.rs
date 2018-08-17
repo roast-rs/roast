@@ -118,9 +118,11 @@ impl BuildConfigBuilder {
             root: root.clone(),
             name: self.name.unwrap_or(env::var("CARGO_PKG_NAME").unwrap()),
             bin_source: self.bin_source.unwrap_or(default_bin_source.to_string()),
-            bin_target: self.bin_target
+            bin_target: self
+                .bin_target
                 .unwrap_or(format!("{}/src/main/resources", root)),
-            java_source: self.java_source
+            java_source: self
+                .java_source
                 .unwrap_or(format!("{}/java", env::var("OUT_DIR").unwrap())),
             java_target: self.java_target.unwrap_or(format!("{}/src/main", root)),
         }
@@ -134,7 +136,7 @@ impl Default for BuildConfig {
 }
 
 pub fn build(config: BuildConfig) {
-    let encoded = serde_json::to_string(&config).expect("could not convert config");
+    let encoded = serde_json::to_string_pretty(&config).expect("could not convert config");
     let path = format!("{}/roast.json", config.root);
     fs::write(path, encoded.as_bytes()).expect("could not write config");
 }
