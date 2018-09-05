@@ -13,7 +13,7 @@ name = "roast"
 path = "src/main.rs"
 
 [dependencies]
-clap = "2.31"
+structopt = "0.2"
 roast = { version = "0.1", path = "../roast" }
 loggerv = "0.7"
 log = "0.4"

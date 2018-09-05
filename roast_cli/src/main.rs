@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate clap;
 extern crate roast;
 #[macro_use]
 extern crate log;
@@ -8,68 +6,70 @@ extern crate includedir;
 extern crate loggerv;
 extern crate phf;
 
+#[macro_use]
+extern crate structopt;
+
 use std::fs;
 use std::process::{exit, Command, Output};
 
-use clap::{App, AppSettings, Arg, ArgMatches, SubCommand};
 use git2::{Config, Repository};
 use roast::build;
 use std::path::Path;
 use std::str::from_utf8;
 
+use structopt::StructOpt;
+
 include!(concat!(env!("OUT_DIR"), "/templates.rs"));
 
+#[derive(Debug, StructOpt)]
+#[structopt(name = "roast")]
+struct Roast {
+    #[structopt(short = "v", long = "verbose", parse(from_occurrences))]
+    verbose: u8,
+    #[structopt(subcommand)]
+    cmd: RoastCommand,
+}
+
+#[derive(Debug, StructOpt)]
+enum RoastCommand {
+    #[structopt(name = "build", about = "Builds and generates the artifacts and source files")]
+    Build,
+    #[structopt(name = "new", about = "Generates a new roast project")]
+    New {
+        #[structopt(help = "The name of the project")]
+        name: String,
+        #[structopt(
+            name = "groupid",
+            long = "groupid",
+            short = "g",
+            help = "Sets the group id for the java project"
+        )]
+        group_id: Option<String>,
+        #[structopt(
+            short = "f",
+            long = "flavor",
+            help = "Sets the java build flavor of the project",
+            raw(possible_values = "&[\"maven\"]", case_insensitive = "true"),
+            raw(default_value = "\"maven\"")
+        )]
+        flavor: String,
+    },
+}
+
 fn main() {
-    let matches = App::new("roast")
-        .version(crate_version!())
-        .author(crate_authors!())
-        .about(crate_description!())
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .arg(
-            Arg::with_name("v")
-                .short("v")
-                .multiple(true)
-                .help("Sets the level of verbosity"),
-        )
-        .subcommand(
-            SubCommand::with_name("build")
-                .about("Builds and generates the artifacts and source files"),
-        )
-        .subcommand(
-            SubCommand::with_name("new")
-                .about("Generates a new roast project")
-                .arg(
-                    Arg::with_name("flavor")
-                        .short("f")
-                        .long("flavor")
-                        .takes_value(true)
-                        .possible_values(&["maven"])
-                        .default_value("maven")
-                        .help("Sets the java build flavor of the project"),
-                )
-                .arg(
-                    Arg::with_name("groupid")
-                        .short("g")
-                        .long("groupid")
-                        .takes_value(true)
-                        .help("Sets the group id for the java project"),
-                )
-                .arg(
-                    Arg::with_name("name")
-                        .required(true)
-                        .help("The name of the project"),
-                ),
-        )
-        .get_matches();
+    let args = Roast::from_args();
+    println!("{:?}", args);
 
     // Always log info level as well (+1)
-    loggerv::init_with_verbosity(matches.occurrences_of("v") + 1)
-        .expect("Could not initialize the logger");
+    loggerv::init_with_verbosity(args.verbose as u64 + 1).expect("Could not initialize the logger");
 
-    match matches.subcommand() {
-        ("build", Some(bm)) => run_build(bm),
-        ("new", Some(nm)) => run_new(nm),
-        _ => panic!("Unknown command"),
+    match args.cmd {
+        RoastCommand::Build => run_build(),
+        RoastCommand::New {
+            name,
+            group_id,
+            flavor,
+        } => run_new(name, group_id, flavor),
     }
 }
 
@@ -79,7 +79,7 @@ fn main() {
 /// then copies the compiled library into a place where
 /// java can pick it up and then also copies the generated
 /// java files into java's scope.
-fn run_build(_m: &ArgMatches) {
+fn run_build() {
     info!("Building the rust project via `cargo build` (this may take a while)");
 
     match Command::new("cargo").arg("build").arg("-vv").output() {
@@ -101,7 +101,7 @@ fn run_build(_m: &ArgMatches) {
 
     info!("Copying build artifact into java scope");
     let extension = if cfg!(windows) {
-            "dll"
+        "dll"
     } else if cfg!(unix) {
         "so"
     } else {
@@ -155,10 +155,8 @@ fn convert_output(o: &Output) -> String {
 /// Note that it also initializes a git project since that's
 /// needed anyways mostly. We can add flags in the future to
 /// customize further.
-fn run_new(m: &ArgMatches) {
-    let name = m.value_of("name")
-        .expect("Could not extract name from args!");
-    let group_id = m.value_of("groupid").unwrap_or("rs.roast.gen");
+fn run_new(name: String, group_id: Option<String>, flavor: String) {
+    let group_id = group_id.unwrap_or(String::from("rs.roast.gen"));
 
     info!("Creating project {}", name);
 
@@ -199,15 +197,13 @@ fn run_new(m: &ArgMatches) {
         .expect("Could not extract git user email");
     let author = format!("[\"{} <{}>\"]", user_name, user_email);
 
-    let flavor = m.value_of("flavor")
-        .expect("Could not read flavor program argument");
     let template_path = format!("templates/{}/", &flavor);
 
     let variables = vec![
-        ("$NAME$", format!("\"{}\"", name)),
+        ("$NAME$", format!("\"{}\"", &name)),
         ("$AUTHORS$", author),
         ("$GROUPID$", group_id.into()),
-        ("$ARTIFACT$", name.into()),
+        ("$ARTIFACT$", name.clone()),
     ];
 
     for tpath in FILES.file_names() {
