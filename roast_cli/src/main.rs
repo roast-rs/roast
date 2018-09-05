@@ -58,7 +58,6 @@ enum RoastCommand {
 
 fn main() {
     let args = Roast::from_args();
-    println!("{:?}", args);
 
     // Always log info level as well (+1)
     loggerv::init_with_verbosity(args.verbose as u64 + 1).expect("Could not initialize the logger");
