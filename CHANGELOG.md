@@ -8,6 +8,7 @@ for Rust libraries in [RFC #1105](https://github.com/rust-lang/rfcs/blob/master/
 
 ### Added
 
+* Added support for rust `Vec<u8>` to and from java `byte[]` arguments and return values.
 * Added support for primitive types as arguments and return values.
   * `i8` <-> `byte`
   * `i32` <-> `int`
