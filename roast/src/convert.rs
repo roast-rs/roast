@@ -108,10 +108,12 @@ pub fn convert_arg_jstring(env: &JNIEnv, input: JString) -> String {
 
 #[inline]
 pub fn convert_arg_jbytearray(env: &JNIEnv, input: jbyteArray) -> Vec<u8> {
-    env.convert_byte_array(input).expect("Could not convert java byte array into a u8 vec!")
+    env.convert_byte_array(input)
+        .expect("Could not convert java byte array into a u8 vec!")
 }
 
 #[inline]
 pub fn convert_retval_vecu8(env: &JNIEnv, input: Vec<u8>) -> jbyteArray {
-    env.byte_array_from_slice(input.as_slice()).expect("Could not convert u8 vec into java byte array!")
+    env.byte_array_from_slice(input.as_slice())
+        .expect("Could not convert u8 vec into java byte array!")
 }

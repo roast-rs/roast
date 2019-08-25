@@ -1,3 +1,4 @@
+use serde_derive::{Deserialize, Serialize};
 use serde_json;
 use std::env;
 use std::fs;
@@ -39,7 +40,7 @@ impl BuildConfig {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct BuildConfigBuilder {
     root: Option<String>,
     name: Option<String>,
@@ -110,21 +111,21 @@ impl BuildConfigBuilder {
     }
 
     pub fn finish(self) -> BuildConfig {
-        let root = self.root.unwrap_or(env::var("CARGO_MANIFEST_DIR").unwrap());
+        let root = self.root.unwrap_or_else(|| env::var("CARGO_MANIFEST_DIR").unwrap());
         let out_dir = env::var("OUT_DIR").unwrap();
         let default_bin_path = Path::new(&out_dir).join("../../../");
         let default_bin_source = default_bin_path.to_str().unwrap();
         BuildConfig {
             root: root.clone(),
-            name: self.name.unwrap_or(env::var("CARGO_PKG_NAME").unwrap()),
-            bin_source: self.bin_source.unwrap_or(default_bin_source.to_string()),
+            name: self.name.unwrap_or_else(|| env::var("CARGO_PKG_NAME").unwrap()),
+            bin_source: self.bin_source.unwrap_or_else(|| default_bin_source.to_string()),
             bin_target: self
                 .bin_target
-                .unwrap_or(format!("{}/src/main/resources", root)),
+                .unwrap_or_else(|| format!("{}/src/main/resources", root)),
             java_source: self
                 .java_source
-                .unwrap_or(format!("{}/java", env::var("OUT_DIR").unwrap())),
-            java_target: self.java_target.unwrap_or(format!("{}/src/main", root)),
+                .unwrap_or_else(|| format!("{}/java", env::var("OUT_DIR").unwrap())),
+            java_target: self.java_target.unwrap_or_else(|| format!("{}/src/main", root)),
         }
     }
 }

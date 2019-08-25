@@ -1,20 +1,9 @@
-extern crate roast;
-#[macro_use]
-extern crate log;
-extern crate git2;
-extern crate includedir;
-extern crate loggerv;
-extern crate phf;
-
-#[macro_use]
-extern crate structopt;
-
-use std::fs;
-use std::process::{exit, Command, Output};
-
 use git2::{Config, Repository};
+use log::{debug, error, info};
 use roast::build;
+use std::fs;
 use std::path::Path;
+use std::process::{exit, Command, Output};
 use std::str::from_utf8;
 
 use structopt::StructOpt;
@@ -32,7 +21,10 @@ struct Roast {
 
 #[derive(Debug, StructOpt)]
 enum RoastCommand {
-    #[structopt(name = "build", about = "Builds and generates the artifacts and source files")]
+    #[structopt(
+        name = "build",
+        about = "Builds and generates the artifacts and source files"
+    )]
     Build,
     #[structopt(name = "new", about = "Generates a new roast project")]
     New {
@@ -60,7 +52,7 @@ fn main() {
     let args = Roast::from_args();
 
     // Always log info level as well (+1)
-    loggerv::init_with_verbosity(args.verbose as u64 + 1).expect("Could not initialize the logger");
+    loggerv::init_with_verbosity(u64::from(args.verbose) + 1).expect("Could not initialize the logger");
 
     match args.cmd {
         RoastCommand::Build => run_build(),
@@ -99,13 +91,14 @@ fn run_build() {
     debug!("Spec loaded from path {}:\n{:#?}", &path, &spec);
 
     info!("Copying build artifact into java scope");
-    let extension = if cfg!(windows) {
+    let extension = if cfg!(target_os = "windows") {
         "dll"
-    } else if cfg!(unix) {
-        "so"
-    } else {
+    } else if cfg!(target_os = "macos") {
         "dylib"
+    } else {
+        "so"
     };
+    info!("{}", extension);
     let from = format!("{}/lib{}.{}", spec.bin_source(), spec.name(), extension);
     let to = format!("{}/lib{}.{}", spec.bin_target(), spec.name(), extension);
     debug!("Copying from {} to {}", from, to);
@@ -155,7 +148,7 @@ fn convert_output(o: &Output) -> String {
 /// needed anyways mostly. We can add flags in the future to
 /// customize further.
 fn run_new(name: String, group_id: Option<String>, flavor: String) {
-    let group_id = group_id.unwrap_or(String::from("rs.roast.gen"));
+    let group_id = group_id.unwrap_or_else(|| String::from("rs.roast.gen"));
 
     info!("Creating project {}", name);
 
@@ -201,7 +194,7 @@ fn run_new(name: String, group_id: Option<String>, flavor: String) {
     let variables = vec![
         ("$NAME$", format!("\"{}\"", &name)),
         ("$AUTHORS$", author),
-        ("$GROUPID$", group_id.into()),
+        ("$GROUPID$", group_id),
         ("$ARTIFACT$", name.clone()),
     ];
 
@@ -214,7 +207,8 @@ fn run_new(name: String, group_id: Option<String>, flavor: String) {
                     .to_str()
                     .expect("Could not convert project root to string"),
                 &shortpath
-            ).replace(".in", "");
+            )
+            .replace(".in", "");
             debug!("Creating file {}", &file_path);
 
             let mut content = String::from_utf8(
@@ -222,7 +216,8 @@ fn run_new(name: String, group_id: Option<String>, flavor: String) {
                     .get(&tpath)
                     .expect("could not get template file")
                     .into_owned(),
-            ).expect("Could not turn raw template file into utf8");
+            )
+            .expect("Could not turn raw template file into utf8");
             for variable in &variables {
                 content = content.replace(variable.0, &variable.1);
             }

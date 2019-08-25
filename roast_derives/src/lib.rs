@@ -1,13 +1,4 @@
 extern crate proc_macro;
-extern crate syn;
-#[macro_use]
-extern crate quote;
-extern crate proc_macro2;
-extern crate walkdir;
-#[macro_use]
-extern crate failure;
-extern crate inflector;
-extern crate itertools;
 
 mod entity;
 
@@ -53,10 +44,10 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
         let e = entry.expect("could not decode entry");
         if e.file_name().to_str().unwrap().ends_with(".rs") {
             let mut file = File::open(&e.path())
-                .expect(&format!("Unable to open file at path {:?}", &e.path()));
+                .unwrap_or_else(|_| panic!("Unable to open file at path {:?}", &e.path()));
             let mut src = String::new();
             file.read_to_string(&mut src)
-                .expect(&format!("Unable to read file at path {:?}", &e.path()));
+                .unwrap_or_else(|_| panic!("Unable to read file at path {:?}", &e.path()));
             let syntax = parse_file(&src).expect("Unable to parse file");
             for item in syntax.items {
                 if let Item::Impl(i) = item {
@@ -75,37 +66,36 @@ fn methods_for_ident(ident: &str) -> Vec<DerivedFn> {
                         for impl_item in i.items {
                             if let ImplItem::Method(m) = impl_item {
                                 if let Visibility::Public(_) = m.vis {
-                                    let mut args: Vec<
-                                        DerivedFnArg,
-                                    > = vec![];
-                                    for arg in m.sig.decl.inputs.iter() {
-                                        if let FnArg::Captured(a) = arg {
-                                            let name = match &a.pat {
+                                    let mut args: Vec<DerivedFnArg> = vec![];
+                                    for arg in m.sig.inputs.iter() {
+                                        if let FnArg::Typed(a) = arg {
+                                            let name = match &*a.pat {
                                                 Pat::Ident(p) => format!("{}", p.ident),
                                                 _ => panic!("unsupported arg signature in name"),
                                             };
-                                            let ty = match &a.ty {
+                                            let ty = match &*a.ty {
                                                 Type::Path(p) => tokens_to_string(
-                                                    *p.path.segments.first().unwrap().value(),
+                                                    &p.path.segments.first().unwrap(),
                                                 ),
                                                 _ => panic!("unsupported arg signature in type"),
                                             };
                                             args.push(DerivedFnArg::Captured { name, ty });
                                         }
-                                        if let FnArg::SelfRef(s) = arg {
-                                            args.push(DerivedFnArg::SelfBorrow {
-                                                mutable: s.mutability.is_some(),
-                                            })
-                                        }
-                                        if let FnArg::SelfValue(s) = arg {
-                                            args.push(DerivedFnArg::SelfOwned {
-                                                mutable: s.mutability.is_some(),
-                                            })
+                                        if let FnArg::Receiver(r) = arg {
+                                            if r.reference.is_some() {
+                                                args.push(DerivedFnArg::SelfBorrow {
+                                                    mutable: r.mutability.is_some(),
+                                                })
+                                            } else {
+                                                args.push(DerivedFnArg::SelfOwned {
+                                                    mutable: r.mutability.is_some(),
+                                                })
+                                            }
                                         }
                                     }
                                     methods.push(DerivedFn::new(
                                         &format!("{}", &m.sig.ident),
-                                        extract_return_type(&m.sig.decl.output),
+                                        extract_return_type(&m.sig.output),
                                         args,
                                     ));
                                 }
@@ -123,7 +113,7 @@ fn extract_return_type(ty: &ReturnType) -> Option<String> {
     match ty {
         ReturnType::Default => None,
         ReturnType::Type(_, t) => match **t {
-            Type::Path(ref p) => Some(tokens_to_string(*p.path.segments.first().unwrap().value())),
+            Type::Path(ref p) => Some(tokens_to_string(&p.path.segments.first().unwrap())),
             _ => panic!("Unable to extract return type {:?}", ty),
         },
     }
@@ -152,7 +142,5 @@ fn write_java_class(entity: &DerivedEntity) {
 fn tokens_to_string<I: ToTokens>(input: &I) -> String {
     let mut ts = proc_macro2::TokenStream::new();
     input.to_tokens(&mut ts);
-    let converted = format!("{}", ts);
-    let whitespace_removed = converted.replace(" ", "");
-    whitespace_removed
+    format!("{}", ts).replace(" ", "")
 }

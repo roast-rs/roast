@@ -1,6 +1,8 @@
+use failure::Fail;
 use inflector::Inflector;
 use itertools::Itertools;
 use proc_macro2::{Span, TokenStream};
+use quote::quote;
 use syn::{parse_str, Expr, Ident};
 
 #[derive(Debug, Fail)]
@@ -68,7 +70,7 @@ impl DerivedFn {
                 _ => (),
             }
         }
-        return true;
+        true
     }
 
     /// Returns the rust style function name turned into java style.
@@ -97,7 +99,7 @@ impl DerivedEntity {
     pub fn new(name: &str, fns: Vec<DerivedFn>) -> Self {
         DerivedEntity {
             name: name.into(),
-            fns: fns,
+            fns,
         }
     }
 
@@ -109,7 +111,7 @@ impl DerivedEntity {
     /// Generates the JNI FFI wrapper functions for all the struct method
     /// implementations.
     pub fn export_jni_ffi_tokens(&self) -> TokenStream {
-        let mut stream = quote!{};
+        let mut stream = quote! {};
         for func in &self.fns {
             let struct_name = Ident::new(&self.name, Span::call_site());
             let fn_name = Ident::new(&func.name, Span::call_site());
@@ -162,7 +164,7 @@ impl DerivedEntity {
             // todo: switch some
             let expanded = if raw_ret_type.is_none() {
                 // no return argument, skip the ret conversion
-                quote!{
+                quote! {
                     #[no_mangle]
                     pub extern "system" fn #jni_name(#(#args),*) {
                        #struct_name::#fn_name(#(#inner_args),*)
@@ -179,7 +181,7 @@ impl DerivedEntity {
                 );
                 let convert_ret_fn_name = parse_str::<Expr>(&convert_fn).unwrap();
                 // we got a return value, so add a conversion wrapper
-                quote!{
+                quote! {
                     #[no_mangle]
                     pub extern "system" fn #jni_name(#(#args),*) -> #retval {
                        #convert_ret_fn_name(&env, #struct_name::#fn_name(#(#inner_args),*))
@@ -251,7 +253,8 @@ fn rust_to_java_return_type(func: &DerivedFn) -> Result<String, ConversionError>
                     func: func.name.clone(),
                 })
             }
-        }.into(),
+        }
+        .into(),
     })
 }
 

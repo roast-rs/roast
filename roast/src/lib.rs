@@ -1,12 +1,3 @@
-extern crate jni;
-#[allow(unused_imports)]
-#[macro_use]
-extern crate roast_derives;
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate serde_json;
-
 #[doc(hidden)]
 pub use roast_derives::*;
 
