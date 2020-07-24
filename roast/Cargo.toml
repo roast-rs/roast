@@ -7,7 +7,7 @@ edition = "2018"
 
 [dependencies]
 roast_derives = { version = "0.1", path = "../roast_derives" }
-jni = "0.13"
+jni = "0.17"
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"

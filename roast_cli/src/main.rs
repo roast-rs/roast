@@ -7,8 +7,16 @@ use std::process::{exit, Command, Output};
 use std::str::from_utf8;
 
 use structopt::StructOpt;
+use clap::arg_enum;
 
 include!(concat!(env!("OUT_DIR"), "/templates.rs"));
+
+arg_enum! {
+    #[derive(Debug)]
+    enum Flavor {
+        Maven,
+    }
+}
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "roast")]
@@ -41,10 +49,11 @@ enum RoastCommand {
             short = "f",
             long = "flavor",
             help = "Sets the java build flavor of the project",
-            raw(possible_values = "&[\"maven\"]", case_insensitive = "true"),
-            raw(default_value = "\"maven\"")
+            possible_values = &Flavor::variants(), 
+            case_insensitive = true,
+            default_value = "Maven"
         )]
-        flavor: String,
+        flavor: Flavor,
     },
 }
 
@@ -52,7 +61,8 @@ fn main() {
     let args = Roast::from_args();
 
     // Always log info level as well (+1)
-    loggerv::init_with_verbosity(u64::from(args.verbose) + 1).expect("Could not initialize the logger");
+    loggerv::init_with_verbosity(u64::from(args.verbose) + 1)
+        .expect("Could not initialize the logger");
 
     match args.cmd {
         RoastCommand::Build => run_build(),
@@ -147,7 +157,7 @@ fn convert_output(o: &Output) -> String {
 /// Note that it also initializes a git project since that's
 /// needed anyways mostly. We can add flags in the future to
 /// customize further.
-fn run_new(name: String, group_id: Option<String>, flavor: String) {
+fn run_new(name: String, group_id: Option<String>, flavor: Flavor) {
     let group_id = group_id.unwrap_or_else(|| String::from("rs.roast.gen"));
 
     info!("Creating project {}", name);
