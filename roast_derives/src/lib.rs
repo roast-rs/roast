@@ -142,5 +142,5 @@ fn write_java_class(entity: &DerivedEntity) {
 fn tokens_to_string<I: ToTokens>(input: &I) -> String {
     let mut ts = proc_macro2::TokenStream::new();
     input.to_tokens(&mut ts);
-    format!("{}", ts).replace(" ", "")
+    format!("{}", ts).replace(' ', "")
 }

@@ -83,7 +83,7 @@ impl DerivedFn {
     pub fn sanitized_return_type(&self) -> Option<String> {
         self.return_type
             .as_ref()
-            .map(|t| t.replace("<", "").replace(">", "").replace(" ", ""))
+            .map(|t| t.replace('<', "").replace('>', "").replace(' ', ""))
     }
 }
 
@@ -121,7 +121,7 @@ impl DerivedEntity {
             );
 
             let raw_ret_type =
-                rust_to_jni_return_type(&func).expect("Could not convert JNI return type");
+                rust_to_jni_return_type(func).expect("Could not convert JNI return type");
 
             let mut args = vec![];
             let mut inner_args = vec![];
@@ -131,12 +131,12 @@ impl DerivedEntity {
                 if let DerivedFnArg::Captured { name: _name, ty } = arg {
                     args.push(self.raw_arg_to_expr(
                         &arg.name().expect("Could not read java name"),
-                        rust_to_jni_type(&ty).expect("Could not convert rust to jni type"),
+                        rust_to_jni_type(ty).expect("Could not convert rust to jni type"),
                     ));
 
                     let convert_fn = format!(
                         "roast::convert::convert_arg_{}(&env, {})",
-                        rust_to_jni_type(&ty)
+                        rust_to_jni_type(ty)
                             .expect("Could not convert rust to jni type")
                             .replace("roast::", "")
                             .to_lowercase(),
@@ -162,16 +162,8 @@ impl DerivedEntity {
             }
 
             // todo: switch some
-            let expanded = if raw_ret_type.is_none() {
-                // no return argument, skip the ret conversion
-                quote! {
-                    #[no_mangle]
-                    pub extern "system" fn #jni_name(#(#args),*) {
-                       #struct_name::#fn_name(#(#inner_args),*)
-                    }
-                }
-            } else {
-                let retval = parse_str::<Expr>(&raw_ret_type.unwrap()).unwrap();
+            let expanded = if let Some(t) = raw_ret_type {
+                let retval = parse_str::<Expr>(&t).unwrap();
                 let convert_fn = format!(
                     "roast::convert::convert_retval_{}",
                     func.sanitized_return_type()
@@ -185,6 +177,14 @@ impl DerivedEntity {
                     #[no_mangle]
                     pub extern "system" fn #jni_name(#(#args),*) -> #retval {
                        #convert_ret_fn_name(&env, #struct_name::#fn_name(#(#inner_args),*))
+                    }
+                }
+            } else {
+                // no return argument, skip the ret conversion
+                quote! {
+                    #[no_mangle]
+                    pub extern "system" fn #jni_name(#(#args),*) {
+                       #struct_name::#fn_name(#(#inner_args),*)
                     }
                 }
             };
@@ -208,13 +208,13 @@ impl DerivedEntity {
         ));
 
         for func in &self.fns {
-            let return_type = rust_to_java_return_type(&func)?;
+            let return_type = rust_to_java_return_type(func)?;
             let mut args = vec![];
             for arg in &func.args {
                 if let DerivedFnArg::Captured { name: _name, ty } = arg {
                     args.push(format!(
                         "{} {}",
-                        rust_to_java_type(&ty).unwrap(),
+                        rust_to_java_type(ty).unwrap(),
                         arg.java_name().unwrap()
                     ));
                 }
@@ -245,7 +245,7 @@ fn rust_to_java_return_type(func: &DerivedFn) -> Result<String, ConversionError>
 
     Ok(match ret {
         None => "void".into(),
-        Some(t) => match rust_to_java_type(&t) {
+        Some(t) => match rust_to_java_type(t) {
             Some(v) => v,
             None => {
                 return Err(ConversionError::UnsupportedReturnType {
@@ -263,7 +263,7 @@ fn rust_to_jni_return_type(func: &DerivedFn) -> Result<Option<String>, Conversio
 
     Ok(match ret {
         None => None,
-        Some(t) => match rust_to_jni_type(&t) {
+        Some(t) => match rust_to_jni_type(t) {
             Some(v) if v == "roast::JString" => Some(v.to_lowercase()),
             Some(v) => Some(v.into()),
             None => {
@@ -529,8 +529,7 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foobar \
              ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jlong ) \
              { Entity :: foobar ( roast :: convert :: convert_arg_jlong ( & env , a ) ) }";
         assert_eq!(expected, exported);
@@ -653,8 +652,7 @@ mod tests {
 
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_foo \
              ( env : roast :: JNIEnv , _class : roast :: JClass , a : roast :: jint , \
              b : roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
              ( & env , Entity :: foo ( roast :: convert :: convert_arg_jint ( & env , a ) , \
@@ -724,8 +722,7 @@ mod tests {
 
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_getFooBar \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_getFooBar \
              ( env : roast :: JNIEnv , _obj : roast :: JObject , a : roast :: jint , b : \
              roast :: jshort ) -> roast :: jboolean { roast :: convert :: convert_retval_bool \
              ( & env , Entity :: get_foo_bar ( roast :: convert :: convert_arg_jint ( & env , a ) \
@@ -742,8 +739,7 @@ mod tests {
         fns.push(DerivedFn::new("myfunc", Some("String".into()), vec![]));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
              ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jstring \
              { roast :: convert :: convert_retval_string ( & env , Entity :: myfunc ( ) ) }";
         assert_eq!(expected, exported);
@@ -781,8 +777,7 @@ mod tests {
         ));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myFunc \
              ( env : roast :: JNIEnv , _class : roast :: JClass , my_var : roast :: JString ) \
              { Entity :: my_func ( roast :: convert :: convert_arg_jstring ( & env , my_var ) ) }";
         assert_eq!(expected, exported);
@@ -864,8 +859,7 @@ mod tests {
         fns.push(DerivedFn::new("myfunc", Some("Vec<u8>".into()), vec![]));
         let derived = DerivedEntity::new("Entity", fns);
         let exported = format!("{}", derived.export_jni_ffi_tokens());
-        let expected =
-            "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
+        let expected = "# [ no_mangle ] pub extern \"system\" fn Java_Entity_myfunc \
              ( env : roast :: JNIEnv , _class : roast :: JClass ) -> roast :: jbyteArray \
              { roast :: convert :: convert_retval_vecu8 ( & env , Entity :: myfunc ( ) ) }";
         assert_eq!(expected, exported);
@@ -889,5 +883,4 @@ mod tests {
 "#;
         assert_eq!(expected, derived.export_java_syntax("mylib").unwrap());
     }
-
 }
