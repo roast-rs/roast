@@ -19,7 +19,7 @@ clap = { version = "2.33", default-features = false }
 roast = { version = "0.1", path = "../roast" }
 loggerv = "0.7"
 log = "0.4"
-git2 = "0.14"
+git2 = "0.16"
 phf = "0.8"
 includedir = "0.6"
 
